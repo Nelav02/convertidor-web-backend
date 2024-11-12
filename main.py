@@ -85,5 +85,22 @@ async def guardarXMLtoMongoDB(json_file: UploadFile):
     except Exception as e:
         return JSONResponse(content={"status": "invalid", "message": f"{str(e)}"}, status_code=500)
 
+@app.post("/validarXML/")
+async def validarXML(file: UploadFile):
+    if file.content_type not in ["text/xml", "application/xml", "application/octet-stream"]:
+        return JSONResponse(content={"status": "invalid", "message": "Invalid file type. Please upload an XML or DATA file."}, status_code=400)
+    
+    try:
+        contents = await file.read()
+        
+        try:
+            xml.dom.minidom.parseString(contents)
+            return JSONResponse(content={"status": "valid", "message": "XML is well-formed."}, status_code=200)
+        except Exception as parse_error:
+            return JSONResponse(content={"status": "invalid", "message": f"ERROR: {str(parse_error)}"}, status_code=400)
+    except Exception as e:
+        return JSONResponse(content={"status": "invalid", "message": f"An error occurred while processing the XML: {str(e)}"}, status_code=500)
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
