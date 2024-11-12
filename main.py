@@ -36,7 +36,7 @@ async def format_xml(file: UploadFile, file_name: str = Form(...)):
             pretty_xml = dom.toprettyxml(indent="    ")
             return JSONResponse(content={"status": "valid", "message": "El archivo XML se ha formateado correctamente." ,"XMLformateado": pretty_xml, "fileName": file_name}, status_code=200)
         except Exception as parse_error:
-            return JSONResponse(content={"status": "invalid", "fileName": file_name, "message": f"{str(parse_error)}"}, status_code=400)
+            return JSONResponse(content={"status": "invalid", "fileName": file_name, "message": f"ERROR: {str(parse_error)}"}, status_code=400)
     except Exception as e:
         raise JSONResponse(content={"status": "invalid","fileName": file_name, "message": f"An error ocurred while processing the XML: {str(e)}"} ,status_code=500)
 
@@ -56,7 +56,7 @@ async def convert_xml_to_json(file: UploadFile, file_name: str = Form(...)):
         else:
             return JSONResponse(content={"status": "invalid", "fileName": file_name, "message": f"JSON validation failed{str(parse_error)}"}, status_code=400)
     except xmltodict.expat.ExpatError as parse_error:
-        return JSONResponse(content={"status": "invalid", "fileName": file_name, "message": f"XML conversion error: {str(parse_error)}"}, status_code=400)
+        return JSONResponse(content={"status": "invalid", "fileName": file_name, "message": f"ERROR: {str(parse_error)}"}, status_code=400)
     except Exception as e:
         return JSONResponse(content={"status": "invalid", "fileName": file_name, "message": f"An error ocurred while processing the XML: {str(e)}"}, status_code=500)
 
