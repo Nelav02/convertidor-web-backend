@@ -101,6 +101,26 @@ async def validarXML(file: UploadFile):
     except Exception as e:
         return JSONResponse(content={"status": "invalid", "message": f"An error occurred while processing the XML: {str(e)}"}, status_code=500)
 
+@app.post("/validarJSON/")
+async def validarJSON(json_file: UploadFile):
+    print("JSON: ", json_file)
+    if json_file.content_type != "application/json":
+        return JSONResponse(content={"status": "invalid", "message": "Invalid file type. Please upload a JSON file."}, status_code=400)
+    
+    try:
+        contents = await json_file.read()
+        json_data0 = json.loads(contents)
+        json_data1 = json.loads(json_data0)
+        
+        if not isinstance(json_data1, dict):
+            return JSONResponse(content={"status": "invalid", "message": "JSON data must be an object."}, status_code=400)
+        
+        return JSONResponse(content={"status": "valid", "message": "JSON is well-formed."}, status_code=200)
+    except json.JSONDecodeError as json_error:
+        return JSONResponse(content={"status": "invalid", "message": f"JSON parsing error: {str(json_error)}"}, status_code=400)
+    except Exception as e:
+        return JSONResponse(content={"status": "invalid", "message": f"An error occurred while validating the JSON: {str(e)}"}, status_code=500)
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
