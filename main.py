@@ -1,11 +1,19 @@
-from fastapi import FastAPI, UploadFile, HTTPException
+from fastapi import FastAPI, UploadFile, HTTPException, File
 from fastapi import Form
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from typing import  List, Dict
+from lxml import etree
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
 import xml.dom.minidom
 import xmltodict
 import json
 import motor.motor_asyncio
+import tarfile
+import time
+import magic
+import io
 import uvicorn
 
 app = FastAPI()
@@ -120,6 +128,63 @@ async def validarJSON(json_file: UploadFile):
         return JSONResponse(content={"status": "invalid", "message": f"JSON parsing error: {str(json_error)}"}, status_code=400)
     except Exception as e:
         return JSONResponse(content={"status": "invalid", "message": f"An error occurred while validating the JSON: {str(e)}"}, status_code=500)
+
+def process_extracted_file(member, extracted_file, index):
+    file_content = extracted_file.read().decode('utf-8')
+    try:
+        if member.name.endswith(".DATA"):
+            xml_dom = xml.dom.minidom.parseString(file_content)
+            pretty_content = xml_dom.toprettyxml()
+            file_type = "application/xml"
+        else:
+            pretty_content = file_content
+            mime = magic.Magic(mime=True)
+            file_type = mime.from_buffer(file_content.encode('utf-8'))
+    except Exception:
+        pretty_content = file_content
+        mime = magic.Magic(mime=True)
+        file_type = mime.from_buffer(file_content.encode('utf-8'))
+    
+    file_info = {
+        "filename": member.name,
+        "content": pretty_content,
+        "size": member.size,
+        "type": file_type,
+        "mtime": time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(member.mtime)),
+        "id": index
+    }
+    return file_info
+
+@app.post("/procesarTAR/")
+async def upload_tar(file: UploadFile = File(...)):
+    extracted_files = []
+
+    tar_info = {
+        "filename": file.filename,
+        "size": f"{file.size} bytes",
+        "mtime": time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(time.time())),
+        "type": "application/x-tar",
+        "num_files": 0
+    }
+
+    with tarfile.open(fileobj=file.file, mode="r:gz") as tar:
+        tar_members = [member for member in tar.getmembers() if member.isfile()]
+        tar_info["num_files"] = len(tar_members)
+
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            tasks = []
+            for index, member in enumerate(tar_members, start=1):
+                extracted_file = tar.extractfile(member)
+                if extracted_file:
+                    tasks.append(loop.run_in_executor(executor, process_extracted_file, member, extracted_file, index))
+            extracted_files = await asyncio.gather(*tasks)
+
+    response_data = {
+        "tar_info": tar_info,
+        "extracted_files": extracted_files
+    }
+    return JSONResponse(content=response_data, status_code=200)
 
 
 if __name__ == "__main__":
