@@ -2,10 +2,12 @@ from fastapi import FastAPI, UploadFile, HTTPException, File
 from fastapi import Form
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from typing import  List, Dict
+from pydantic import BaseModel, Field
+from typing import  List, Dict, Optional
 from lxml import etree
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Pool, cpu_count
+from datetime import datetime
 import asyncio
 import os
 import tempfile
@@ -24,7 +26,8 @@ app = FastAPI()
 MONGO_DETAILS = "mongodb://localhost:27017/"
 client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_DETAILS)
 database = client.xml_database
-collection = database.get_collection("xml_json_collection")
+collection1 = database.get_collection("archivos_individual")
+collection2 = database.get_collection("archivos_pasoapaso")
 
 app.add_middleware(
     CORSMiddleware,
@@ -86,7 +89,7 @@ async def guardarXMLtoMongoDB(json_file: UploadFile):
         if not isinstance(json_data, dict):
             return JSONResponse(content={"status": "invalid", "message": "JSON data must be an object.", "json_data": json_data}, status_code=400)
 
-        result = await collection.insert_one(json_data)
+        result = await collection1.insert_one(json_data)
         if result.inserted_id:
             return JSONResponse(content={"status": "valid", "message": "JSON successfully saved to MongoDB."}, status_code=200)
         else:
@@ -191,6 +194,65 @@ async def upload_tar(file: UploadFile = File(...)):
         "extracted_files": extracted_files
     }
     return JSONResponse(content=response_data, status_code=200)
+
+class FileData(BaseModel):
+    filename: str
+    content: str
+    size: int
+    type: str
+    id: Optional[int] = None
+    mtime: str
+
+@app.post("/guardarListaArchivos/")
+async def guardar_archivos_xml(archivos: List[FileData]):
+    try:
+        archivos_xml = [archivo for archivo in archivos if archivo.type == 'application/xml']
+
+        if not archivos_xml:
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "status": "invalid",
+                    "message": "No se encontraron archivos XML para guardar.",
+                }
+            )
+
+        documentos = []
+        for archivo in archivos_xml:
+            data = archivo.dict()
+            data.pop('id', None)
+
+            try:
+                contenido_json = xmltodict.parse(data['content'])
+                data['content'] = contenido_json
+            except Exception as e:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "status": "invalid",
+                        "message": f"Error al convertir el contenido XML a JSON: {str(e)}",
+                    }
+                )
+
+            documentos.append(data)
+
+        resultado = await collection2.insert_many(documentos)
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "valid",
+                "message": f"Archivos XML guardados exitosamente: {len(resultado.inserted_ids)}",
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "invalid",
+                "message": f"Error al guardar los archivos: {str(e)}",
+            }
+        )
 
 
 if __name__ == "__main__":
