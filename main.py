@@ -8,6 +8,7 @@ from lxml import etree
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Pool, cpu_count
 from datetime import datetime
+from bson import ObjectId
 import asyncio
 import os
 import tempfile
@@ -254,6 +255,128 @@ async def guardar_archivos_xml(archivos: List[FileData]):
             }
         )
 
+class FileDataResponse(BaseModel):
+    id: str = Field(..., alias='_id')
+    filename: str
+    size: int
+    type: str
+    mtime: str
+
+    class Config:
+        allow_population_by_field_name = True
+
+class ObtenerArchivosResponse(BaseModel):
+    status: str
+    message: str
+    status_code: int
+    data: List[FileDataResponse]
+
+@app.get("/obtener_datos_automatizacion", response_model=ObtenerArchivosResponse)
+async def obtener_archivos(skip: int = 0, limit: int = 5):
+    try:
+        total_archivos = await collection2.count_documents({})
+
+        if skip >= total_archivos:
+            return {
+                "status": "valid",
+                "message": "No hay más archivos para mostrar",
+                "status_code": 200,
+                "data": []
+            }
+
+        cursor = collection2.find({}, {"content": 0}).skip(skip).limit(limit)
+        documentos = await cursor.to_list(length=limit)
+
+        for documento in documentos:
+            documento['_id'] = str(documento['_id'])
+
+        return {
+            "status": "valid",
+            "message": "Archivos obtenidos exitosamente",
+            "status_code": 200,
+            "data": documentos
+        }
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "invalid",
+                "message": f"Error al obtener los archivos: {str(e)}",
+                "status_code": 500,
+                "data": []
+            }
+        )
+
+class ContentDataResponse(BaseModel):
+    id: str = Field(..., alias='_id')
+    size: int
+    insertion_date: str
+
+    class Config:
+        allow_population_by_field_name = True
+
+class ObtenerContenidoResponse(BaseModel):
+    status: str
+    message: str
+    status_code: int
+    data: List[ContentDataResponse]
+
+@app.get("/obtener_contenido_individual", response_model=ObtenerContenidoResponse)
+async def obtener_contenido(skip: int = 0, limit: int = 5):
+    try:
+        total_contenido = await collection1.count_documents({})
+
+        if skip >= total_contenido:
+            return {
+                "status": "valid",
+                "message": "No hay más contenido para mostrar",
+                "status_code": 200,
+                "data": []
+            }
+
+        cursor = collection1.find().skip(skip).limit(limit)
+        documentos = await cursor.to_list(length=limit)
+
+        for documento in documentos:
+            documento['_id'] = str(documento['_id'])
+
+            if 'content' in documento:
+                if isinstance(documento['content'], dict):
+                    contenido_str = json.dumps(documento['content'])
+                    documento['size'] = len(contenido_str.encode('utf-8'))
+                elif isinstance(documento['content'], str):
+                    documento['size'] = len(documento['content'].encode('utf-8'))
+                else:
+                    documento['size'] = len(str(documento['content']).encode('utf-8'))
+            else:
+                documento['size'] = 0
+
+            if '_id' in documento:
+                timestamp = ObjectId(documento['_id']).generation_time
+                documento['insertion_date'] = timestamp.strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                documento['insertion_date'] = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+
+            documento.pop('content', None)
+
+        return {
+            "status": "valid",
+            "message": "Contenido obtenido exitosamente",
+            "status_code": 200,
+            "data": documentos
+        }
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "invalid",
+                "message": f"Error al obtener el contenido: {str(e)}",
+                "status_code": 500,
+                "data": []
+            }
+        )
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
